@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+supabase
+groq
+PyPDF2
+python-multipart
+pypdf
+requests
