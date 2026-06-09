@@ -10,16 +10,15 @@ from groq import Groq
 import PyPDF2
 
 # ========== CONFIGURATION ==========
-import os
-
+# All credentials come from environment variables (set on Render)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY or not GROQ_API_KEY:
-    raise RuntimeError("Missing required environment variables: SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY")
+    raise RuntimeError("Missing required environment variables")
 
-# Global client (anonymous – only for auth validation and public access)
+# Global client (anonymous – only for auth validation)
 supabase_anon: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -70,7 +69,7 @@ def get_current_user(authorization: str = Header(None)):
     token = authorization.replace("Bearer ", "")
     try:
         user = supabase_anon.auth.get_user(token)
-        return token, user.user.id  # returns tuple
+        return token, user.user.id  # returns tuple (token, user_id)
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
 
@@ -91,15 +90,8 @@ async def process_upload_sync(access_token: str, user_id: str, file_content: byt
     finally:
         os.unlink(tmp_path)
 
-    # Optional: upload to storage (skip for speed if not needed)
+    # Skip storage upload for speed (optional)
     pdf_url = ""
-    bucket_name = "lien-waivers"
-    try:
-        file_path = f"{user_id}/{uuid.uuid4()}.pdf"
-        supabase_auth.storage.from_(bucket_name).upload(file_path, file_content)
-        pdf_url = supabase_auth.storage.from_(bucket_name).get_public_url(file_path)
-    except Exception as e:
-        print(f"Storage upload skipped: {e}")
 
     data = {
         "user_id": user_id,
@@ -119,7 +111,6 @@ async def process_upload_sync(access_token: str, user_id: str, file_content: byt
         supabase_auth.table("extractions").insert(data).execute()
     except Exception as e:
         print(f"Database insert error: {e}")
-        # Re-raise to let the endpoint know
         raise HTTPException(status_code=500, detail="Failed to save extraction results")
 
     return {"status": "completed", "data": extracted}
@@ -128,7 +119,7 @@ async def process_upload_sync(access_token: str, user_id: str, file_content: byt
 @app.post("/upload")
 async def upload_pdf(
     file: UploadFile = File(...),
-    auth_data: tuple = Depends(get_current_user)  # (token, user_id)
+    auth_data: tuple = Depends(get_current_user)
 ):
     access_token, user_id = auth_data
     contents = await file.read()
