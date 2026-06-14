@@ -197,9 +197,16 @@
     // ========== REPLACE THESE WITH YOUR ACTUAL SUPABASE VALUES ==========
     const SUPABASE_URL = 'https://yataoyjfxacqnfgsmaeg.supabase.co';      // <-- CHANGE
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlhdGFveWpmeGFjcW5mZ3NtYWVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NTU0NzcsImV4cCI6MjA5NjMzMTQ3N30.9NiseMRBGbq80FiFYIFTIDnn0haed8A_IlPQZwcoXMI';               // <-- CHANGE
-    // ==================================================================
+==================================================================
 
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Ensure supabase client is created only once
+    let supabaseClient;
+    if (typeof window.supabaseClient === 'undefined') {
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.supabaseClient = supabaseClient;
+    } else {
+        supabaseClient = window.supabaseClient;
+    }
 
     // DOM elements
     const loginSection = document.getElementById('loginSection');
@@ -236,11 +243,11 @@
         if (!email || !password) { alert('Please enter both email and password'); return; }
         let response;
         if (isSignUpMode) {
-            response = await supabase.auth.signUp({ email, password });
+            response = await supabaseClient.auth.signUp({ email, password });
             if (response.error) alert('Sign up error: ' + response.error.message);
             else alert('Check your email for confirmation!');
         } else {
-            response = await supabase.auth.signInWithPassword({ email, password });
+            response = await supabaseClient.auth.signInWithPassword({ email, password });
             if (response.error) alert('Login error: ' + response.error.message);
         }
         if (!response.error) emailForm.style.display = 'none';
@@ -248,7 +255,7 @@
     emailLoginBtn.addEventListener('click', handleEmailAuth);
 
     async function signInWithGoogle() {
-        const { error } = await supabase.auth.signInWithOAuth({
+        const { error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: { redirectTo: window.location.origin + window.location.pathname }
         });
@@ -256,10 +263,10 @@
     }
     googleLoginBtn.addEventListener('click', signInWithGoogle);
 
-    async function logout() { await supabase.auth.signOut(); }
+    async function logout() { await supabaseClient.auth.signOut(); }
     logoutBtn.addEventListener('click', logout);
 
-    supabase.auth.onAuthStateChange((event, session) => {
+    supabaseClient.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' && session) {
             localStorage.setItem('supabase_token', session.access_token);
             userEmailSpan.innerText = session.user.email;
@@ -275,7 +282,7 @@
     });
 
     async function checkSession() {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await supabaseClient.auth.getSession();
         if (session) {
             localStorage.setItem('supabase_token', session.access_token);
             userEmailSpan.innerText = session.user.email;
