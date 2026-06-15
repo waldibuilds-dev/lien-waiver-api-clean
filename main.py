@@ -49,6 +49,13 @@ def run_extraction(pdf_path):
     prompt = f"""
 Extract the following from this construction lien waiver document. Return ONLY valid JSON.
 Fields: claimant_name, customer_name, project_name, owner_name, amount_paid, amount_due, payment_date, waiver_type.
+
+Rules:
+- amount_paid: the dollar amount the claimant HAS RECEIVED (numeric only, no currency symbol, no commas).
+- amount_due: the dollar amount the claimant IS STILL OWED (numeric only). If the document shows a subtraction like "10000 - 2345", compute the result (e.g., 7655). If only one amount is present, put it in amount_paid and leave amount_due empty.
+- payment_date: format YYYY-MM-DD.
+- waiver_type: one of "partial", "final", "conditional", "unconditional".
+
 If a field is missing, use empty string.
 
 Document text:
@@ -60,7 +67,27 @@ Document text:
         temperature=0.1,
         response_format={"type": "json_object"}
     )
-    return json.loads(completion.choices[0].message.content)
+    result = json.loads(completion.choices[0].message.content)
+
+    # Post-process numeric fields
+    def clean_number(val):
+        if not val or not isinstance(val, str):
+            return val
+        # Remove any characters except digits and decimal point
+        import re
+        cleaned = re.sub(r'[^\d.-]', '', val)
+        if cleaned.count('-') > 1:
+            cleaned = cleaned.split('-')[0]  # take first number if expression
+        # If still contains '-' (e.g., "10000-2345"), compute
+        if '-' in cleaned:
+            parts = cleaned.split('-')
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                cleaned = str(int(parts[0]) - int(parts[1]))
+        return cleaned
+
+    result['amount_paid'] = clean_number(result.get('amount_paid', ''))
+    result['amount_due'] = clean_number(result.get('amount_due', ''))
+    return result
 
 # ------------------- Authentication -------------------
 def get_current_user(authorization: str = Header(None)):
