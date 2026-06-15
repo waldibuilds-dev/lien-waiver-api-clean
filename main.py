@@ -51,10 +51,11 @@ Extract the following from this construction lien waiver document. Return ONLY v
 Fields: claimant_name, customer_name, project_name, owner_name, amount_paid, amount_due, payment_date, waiver_type.
 
 Rules:
-- amount_paid: the dollar amount the claimant HAS RECEIVED (numeric only, no currency symbol, no commas).
-- amount_due: the dollar amount the claimant IS STILL OWED (numeric only). If the document shows a subtraction like "10000 - 2345", compute the result (e.g., 7655). If only one amount is present, put it in amount_paid and leave amount_due empty.
+- amount_paid: the dollar amount the claimant HAS RECEIVED (e.g., "10000"). If multiple numbers, pick the one labeled "received" or "amount paid".
+- amount_due: the dollar amount the claimant IS STILL OWED (e.g., "2345"). Look for phrases like "amount left to be paid", "remaining", "still due". Do NOT compute subtraction. Return the number as a string without commas or currency symbol.
+- If you see a range or subtraction, ignore it. Only extract explicit standalone numbers.
 - payment_date: format YYYY-MM-DD.
-- waiver_type: one of "partial", "final", "conditional", "unconditional".
+- waiver_type: "partial", "final", "conditional", or "unconditional".
 
 If a field is missing, use empty string.
 
@@ -69,24 +70,17 @@ Document text:
     )
     result = json.loads(completion.choices[0].message.content)
 
-    # Post-process numeric fields
-    def clean_number(val):
+    # Post-process numeric fields: extract first number from any string
+    import re
+    def extract_number(val):
         if not val or not isinstance(val, str):
             return val
-        # Remove any characters except digits and decimal point
-        import re
-        cleaned = re.sub(r'[^\d.-]', '', val)
-        if cleaned.count('-') > 1:
-            cleaned = cleaned.split('-')[0]  # take first number if expression
-        # If still contains '-' (e.g., "10000-2345"), compute
-        if '-' in cleaned:
-            parts = cleaned.split('-')
-            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                cleaned = str(int(parts[0]) - int(parts[1]))
-        return cleaned
-
-    result['amount_paid'] = clean_number(result.get('amount_paid', ''))
-    result['amount_due'] = clean_number(result.get('amount_due', ''))
+        # Find first sequence of digits (with optional decimal)
+        match = re.search(r'\d+(?:\.\d+)?', val)
+        return match.group(0) if match else ''
+    
+    result['amount_paid'] = extract_number(result.get('amount_paid', ''))
+    result['amount_due'] = extract_number(result.get('amount_due', ''))
     return result
 
 # ------------------- Authentication -------------------
