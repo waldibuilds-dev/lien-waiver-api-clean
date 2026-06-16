@@ -145,6 +145,14 @@ async def upload_pdf(
     auth_data: tuple = Depends(get_current_user)
 ):
     access_token, user_id = auth_data
+    
+    # Check subscription status
+    supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase_auth.auth.set_session(access_token, access_token)
+    sub_result = supabase_auth.table("subscriptions").select("*").eq("user_id", user_id).eq("status", "active").execute()
+    if not sub_result.data:
+        raise HTTPException(status_code=402, detail="Active subscription required. Please subscribe at /create-checkout-session")
+    
     contents = await file.read()
     result = await process_upload_sync(access_token, user_id, contents, file.filename)
     return result
@@ -213,6 +221,33 @@ async def stripe_webhook(request: Request):
             supabase_auth.table("subscriptions").insert(data).execute()
     
     return {"status": "ok"}
+
+@app.post("/create-checkout-session")
+async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
+    access_token, user_id = auth_data
+    
+    # Get user email from Supabase auth using the access token
+    supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase_auth.auth.set_session(access_token, access_token)
+    user = supabase_auth.auth.get_user()
+    email = user.user.email
+    
+    # Create a Stripe Checkout Session
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price": "price_1Timcx2H40FY3BJebX8FDbXV",                  		"quantity": 1,
+            }],
+            mode="subscription",
+            success_url="https://lienflow-frontend.onrender.com?success=true",
+            cancel_url="https://lienflow-frontend.onrender.com?canceled=true",
+            customer_email=email,
+            metadata={"supabase_user_id": user_id},
+        )
+        return {"url": checkout_session.url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health():
