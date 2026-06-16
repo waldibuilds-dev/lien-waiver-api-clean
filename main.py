@@ -8,12 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from groq import Groq
 import PyPDF2
+import stripe
 
 # ========== CONFIGURATION ==========
 # All credentials come from environment variables (set on Render)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY or not GROQ_API_KEY:
     raise RuntimeError("Missing required environment variables")
@@ -154,6 +156,63 @@ def list_extractions(auth_data: tuple = Depends(get_current_user)):
     supabase_auth.auth.set_session(access_token, access_token)
     result = supabase_auth.table("extractions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
     return result.data
+
+import stripe
+from datetime import datetime, timedelta
+from fastapi import Request
+
+@app.post("/stripe-webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, webhook_secret
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    
+    # Handle the event
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        customer_email = session["customer_details"]["email"]
+        stripe_customer_id = session["customer"]
+        stripe_subscription_id = session["subscription"]
+        supabase_user_id = session.get("metadata", {}).get("supabase_user_id")
+        
+        # If we don't have user_id from metadata, look up by email
+        if not supabase_user_id:
+            # Find user in auth.users by email (requires service_role key)
+            supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+            user_result = supabase_admin.auth.admin.list_users()
+            for user in user_result.users:
+                if user.email == customer_email:
+                    supabase_user_id = user.id
+                    break
+        
+        # Update subscriptions table
+        supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
+        # Use anon key (or service role) – we'll assume anon has UPDATE/INSERT on subscriptions
+        data = {
+            "user_id": supabase_user_id,
+            "stripe_customer_id": stripe_customer_id,
+            "stripe_subscription_id": stripe_subscription_id,
+            "status": "active",
+            "current_period_end": (datetime.now() + timedelta(days=30)).isoformat(),
+            "updated_at": datetime.now().isoformat(),
+        }
+        # Check if exists
+        existing = supabase_auth.table("subscriptions").select("*").eq("user_id", supabase_user_id).execute()
+        if existing.data:
+            supabase_auth.table("subscriptions").update(data).eq("user_id", supabase_user_id).execute()
+        else:
+            supabase_auth.table("subscriptions").insert(data).execute()
+    
+    return {"status": "ok"}
 
 @app.get("/health")
 def health():
