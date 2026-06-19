@@ -149,9 +149,9 @@ async def upload_pdf(
     # Check subscription status
     supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
     supabase_auth.auth.set_session(access_token, access_token)
-    sub_result = supabase_auth.table("subscriptions").select("*").eq("user_id", user_id).eq("status", "active").execute()
-    if not sub_result.data:
-        raise HTTPException(status_code=402, detail="Active subscription required. Please subscribe at /create-checkout-session")
+    sub_result = supabase_auth.table("subscriptions").select("*").eq("user_id", user_id).in_("status", ["active", "trialing"]).execute()
+if not sub_result.data:
+    raise HTTPException(status_code=402, detail="Active or trial subscription required. Please subscribe.")
     
     contents = await file.read()
     result = await process_upload_sync(access_token, user_id, contents, file.filename)
@@ -185,8 +185,69 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
     
     # Handle the event
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
+   if event["type"] == "checkout.session.completed":
+    session = event["data"]["object"]
+    customer_email = session["customer_details"]["email"]
+    stripe_customer_id = session["customer"]
+    stripe_subscription_id = session["subscription"]
+    supabase_user_id = session.get("metadata", {}).get("supabase_user_id")
+
+    elif event["type"] == "customer.subscription.updated":
+    subscription = event["data"]["object"]
+    stripe_subscription_id = subscription.id
+    status = subscription.status  # "active", "past_due", "canceled", etc.
+    current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
+
+    # Find the user in your subscriptions table by stripe_subscription_id
+    supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+    result = supabase_admin.table("subscriptions").select("*").eq("stripe_subscription_id", stripe_subscription_id).execute()
+    if result.data:
+        user_id = result.data[0]["user_id"]
+        supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase_auth.table("subscriptions").update({
+            "status": status,
+            "current_period_end": current_period_end,
+            "updated_at": datetime.now().isoformat()
+        }).eq("user_id", user_id).execute()
+
+# If we don't have user_id from metadata, look up by email
+    if not supabase_user_id:
+        supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+        user_result = supabase_admin.auth.admin.list_users()
+        for user in user_result.users:
+            if user.email == customer_email:
+                supabase_user_id = user.id
+                break
+
+    if not supabase_user_id:
+        print("Webhook error: no user_id found")
+        return {"status": "error", "detail": "User not found"}
+
+    # Retrieve the subscription object from Stripe to get its status
+    try:
+        subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+        status = subscription.status  # will be "trialing" or "active"
+        current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
+    except Exception as e:
+        print(f"Error retrieving subscription: {e}")
+        status = "trialing"  # fallback
+        current_period_end = (datetime.now() + timedelta(days=30)).isoformat()
+
+    # Update subscriptions table
+    supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
+    data = {
+        "user_id": supabase_user_id,
+        "stripe_customer_id": stripe_customer_id,
+        "stripe_subscription_id": stripe_subscription_id,
+        "status": status,  # "trialing" or "active"
+        "current_period_end": current_period_end,
+        "updated_at": datetime.now().isoformat(),
+    }
+    existing = supabase_auth.table("subscriptions").select("*").eq("user_id", supabase_user_id).execute()
+    if existing.data:
+        supabase_auth.table("subscriptions").update(data).eq("user_id", supabase_user_id).execute()
+    else:
+        supabase_auth.table("subscriptions").insert(data).execute()
         customer_email = session["customer_details"]["email"]
         stripe_customer_id = session["customer"]
         stripe_subscription_id = session["subscription"]
@@ -232,6 +293,14 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
     user = supabase_auth.auth.get_user()
     email = user.user.email
     
+  # Check if any previous subscription was ever active or trialing
+        for sub in existing.data:
+            if sub.get("status") in ["active", "trialing", "past_due"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You've already used a free trial or have an active subscription. Contact support."
+                )
+
     # Create a Stripe Checkout Session
     try:
         checkout_session = stripe.checkout.Session.create(
@@ -240,6 +309,9 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
                 "price": "price_1Timcx2H40FY3BJebX8FDbXV",                  		"quantity": 1,
             }],
             mode="subscription",
+		subscription_data={
+                "trial_period_days": 7
+            },
             success_url="https://lienflow-frontend.onrender.com?success=true",
             cancel_url="https://lienflow-frontend.onrender.com?canceled=true",
             customer_email=email,
