@@ -3,7 +3,8 @@ import uuid
 import tempfile
 import re
 import json
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
+from datetime import datetime, timedelta
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from groq import Groq
@@ -11,7 +12,6 @@ import PyPDF2
 import stripe
 
 # ========== CONFIGURATION ==========
-# All credentials come from environment variables (set on Render)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -73,11 +73,9 @@ Document text:
     result = json.loads(completion.choices[0].message.content)
 
     # Post-process numeric fields: extract first number from any string
-    import re
     def extract_number(val):
         if not val or not isinstance(val, str):
             return val
-        # Find first sequence of digits (with optional decimal)
         match = re.search(r'\d+(?:\.\d+)?', val)
         return match.group(0) if match else ''
     
@@ -146,12 +144,12 @@ async def upload_pdf(
 ):
     access_token, user_id = auth_data
     
-    # Check subscription status
+    # Check subscription status (allow active or trialing)
     supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
     supabase_auth.auth.set_session(access_token, access_token)
     sub_result = supabase_auth.table("subscriptions").select("*").eq("user_id", user_id).in_("status", ["active", "trialing"]).execute()
-if not sub_result.data:
-    raise HTTPException(status_code=402, detail="Active or trial subscription required. Please subscribe.")
+    if not sub_result.data:
+        raise HTTPException(status_code=402, detail="Active or trial subscription required. Please subscribe.")
     
     contents = await file.read()
     result = await process_upload_sync(access_token, user_id, contents, file.filename)
@@ -164,10 +162,6 @@ def list_extractions(auth_data: tuple = Depends(get_current_user)):
     supabase_auth.auth.set_session(access_token, access_token)
     result = supabase_auth.table("extractions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
     return result.data
-
-import stripe
-from datetime import datetime, timedelta
-from fastapi import Request
 
 @app.post("/stripe-webhook")
 async def stripe_webhook(request: Request):
@@ -192,7 +186,6 @@ async def stripe_webhook(request: Request):
         stripe_subscription_id = session["subscription"]
         supabase_user_id = session.get("metadata", {}).get("supabase_user_id")
 
-        # If we don't have user_id from metadata, look up by email using service_role
         if not supabase_user_id:
             supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
             user_result = supabase_admin.auth.admin.list_users()
@@ -205,17 +198,15 @@ async def stripe_webhook(request: Request):
             print("Webhook error: no user_id found")
             return {"status": "error", "detail": "User not found"}
 
-        # Retrieve the subscription from Stripe to get its status (trialing, active, etc.)
         try:
             subscription = stripe.Subscription.retrieve(stripe_subscription_id)
-            status = subscription.status  # "trialing", "active", etc.
+            status = subscription.status
             current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
         except Exception as e:
             print(f"Error retrieving subscription: {e}")
-            status = "trialing"  # fallback
+            status = "trialing"
             current_period_end = (datetime.now() + timedelta(days=30)).isoformat()
 
-        # Update subscriptions table
         supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
         data = {
             "user_id": supabase_user_id,
@@ -237,7 +228,6 @@ async def stripe_webhook(request: Request):
         status = subscription.status
         current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
 
-        # Find the user by stripe_subscription_id
         supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
         result = supabase_admin.table("subscriptions").select("*").eq("stripe_subscription_id", stripe_subscription_id).execute()
         if result.data:
@@ -252,17 +242,17 @@ async def stripe_webhook(request: Request):
             print(f"Webhook warning: subscription {stripe_subscription_id} not found in database")
 
     return {"status": "ok"}
+
 @app.post("/create-checkout-session")
 async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
     access_token, user_id = auth_data
 
-    # Get user email
     supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
     supabase_auth.auth.set_session(access_token, access_token)
     user = supabase_auth.auth.get_user()
     email = user.user.email
 
-    # --- Abuse prevention: check if this user already had a subscription ---
+    # Abuse prevention: check if this user already had a subscription
     supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
     existing = supabase_admin.table("subscriptions").select("*").eq("user_id", user_id).execute()
     if existing.data:
@@ -272,13 +262,13 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
                     status_code=403,
                     detail="You've already used a free trial or have an active subscription. Contact support."
                 )
-        # If you want to allow re-subscription after cancellation, you can remove the above block
 
     try:
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{
-                "price": "price_1Timcx2H40FY3BJebX8FDbXV",                  "quantity": 1,
+                "price": "price_1Timcx2H40FY3BJebX8FDbXV",
+                "quantity": 1,
             }],
             mode="subscription",
             subscription_data={
@@ -292,7 +282,6 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
         return {"url": checkout_session.url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/health")
 def health():
