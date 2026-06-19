@@ -255,30 +255,33 @@ async def stripe_webhook(request: Request):
 @app.post("/create-checkout-session")
 async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
     access_token, user_id = auth_data
-    
-    # Get user email from Supabase auth using the access token
+
+    # Get user email
     supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
     supabase_auth.auth.set_session(access_token, access_token)
     user = supabase_auth.auth.get_user()
     email = user.user.email
-    
-  # Check if any previous subscription was ever active or trialing
+
+    # --- Abuse prevention: check if this user already had a subscription ---
+    supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+    existing = supabase_admin.table("subscriptions").select("*").eq("user_id", user_id).execute()
+    if existing.data:
         for sub in existing.data:
             if sub.get("status") in ["active", "trialing", "past_due"]:
                 raise HTTPException(
                     status_code=403,
                     detail="You've already used a free trial or have an active subscription. Contact support."
                 )
+        # If you want to allow re-subscription after cancellation, you can remove the above block
 
-    # Create a Stripe Checkout Session
     try:
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{
-                "price": "price_1Timcx2H40FY3BJebX8FDbXV","quantity": 1,
+                "price": "price_1Timcx2H40FY3BJebX8FDbXV",                  "quantity": 1,
             }],
             mode="subscription",
-		subscription_data={
+            subscription_data={
                 "trial_period_days": 7
             },
             success_url="https://lienflow-frontend.onrender.com?success=true",
@@ -289,6 +292,7 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
         return {"url": checkout_session.url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/health")
 def health():
