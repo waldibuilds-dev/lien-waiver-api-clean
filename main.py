@@ -251,7 +251,8 @@ async def stripe_webhook(request: Request):
         else:
             print(f"Webhook warning: subscription {stripe_subscription_id} not found in database")
 
-    return {"status": "ok"}@app.post("/create-checkout-session")
+    return {"status": "ok"}
+@app.post("/create-checkout-session")
 async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
     access_token, user_id = auth_data
     
@@ -274,7 +275,7 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{
-                "price": "price_1Timcx2H40FY3BJebX8FDbXV",                  		"quantity": 1,
+                "price": "price_1Timcx2H40FY3BJebX8FDbXV","quantity": 1,
             }],
             mode="subscription",
 		subscription_data={
