@@ -256,7 +256,7 @@
     async function signInWithGoogle() {
         const { error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
-            options: { redirectTo: window.location.origin + window.location.pathname }
+            options: { redirectTo: 'https://lienflow-frontend.onrender.com' }
         });
         if (error) console.error('Google login error:', error);
     }
