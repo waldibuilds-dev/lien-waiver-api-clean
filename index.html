@@ -254,12 +254,17 @@
     emailLoginBtn.addEventListener('click', handleEmailAuth);
 
     async function signInWithGoogle() {
-        const { error } = await supabaseClient.auth.signInWithOAuth({
-            provider: 'google',
-            options: { redirectTo: 'https://lienflow-frontend.onrender.com' }
-        });
-        if (error) console.error('Google login error:', error);
-    }
+    // Clear any stale OAuth state to prevent redirect to localhost
+    await supabaseClient.auth.signOut();
+    localStorage.removeItem('supabase.auth.token');
+    sessionStorage.clear();
+    
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: 'https://lienflow-frontend.onrender.com' }
+    });
+    if (error) console.error('Google login error:', error);
+}
     googleLoginBtn.addEventListener('click', signInWithGoogle);
 
     async function logout() { await supabaseClient.auth.signOut(); }
