@@ -149,6 +149,37 @@
         }
         .hidden { display: none; }
         .footer { text-align: center; color: #64748b; margin-top: 2rem; font-size: 0.8rem; }
+
+        /* Confirmation Screen */
+        #confirmationScreen {
+            text-align: center;
+            padding: 2rem;
+            display: none;
+        }
+        #confirmationScreen h2 {
+            color: #e2e8f0;
+            margin-bottom: 1rem;
+        }
+        #confirmationScreen p {
+            color: #94a3b8;
+            max-width: 500px;
+            margin: 0 auto 2rem;
+            line-height: 1.6;
+        }
+        .confirmation-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        .btn-resend {
+            background: transparent;
+            border: 1px solid #3b82f6;
+            color: #3b82f6;
+            padding: 0.5rem 1.5rem;
+            border-radius: 2rem;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-resend:hover { background: #3b82f6; color: white; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -159,8 +190,10 @@
         <div class="tagline">Instant AI extraction from construction lien waivers</div>
     </div>
     <div class="card">
+        <!-- LOGIN SECTION -->
         <div id="loginSection">
             <div class="auth-section">
+                <!-- Google button commented out for now -->
                 <!-- <button class="btn-google" id="googleLoginBtn">Continue with Google</button> -->
                 <button class="btn-email" id="showEmailBtn">Sign in with Email</button>
                 <div id="emailForm" class="email-form">
@@ -171,6 +204,19 @@
                 </div>
             </div>
         </div>
+
+        <!-- CONFIRMATION SCREEN (shown after sign-up) -->
+        <div id="confirmationScreen">
+            <div class="confirmation-icon">✉️</div>
+            <h2>Check your email</h2>
+            <p>
+                We've sent a confirmation link to <span id="confirmationEmail" style="color:#60a5fa;"></span>.
+                Please click the link in the email to activate your account. Once confirmed, you can log in.
+            </p>
+            <button class="btn-resend" id="resendBtn">Resend confirmation email</button>
+        </div>
+
+        <!-- APP SECTION (shown after login) -->
         <div id="appSection" class="hidden">
             <div class="user-info">
                 <span class="user-email" id="userEmail"></span>
@@ -204,11 +250,12 @@
     const SUPABASEURL = 'https://yataoyjfxacqnfgsmaeg.supabase.co';
     const SUPABASEANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlhdGFveWpmeGFjcW5mZ3NtYWVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NTU0NzcsImV4cCI6MjA5NjMzMTQ3N30.9NiseMRBGbq80FiFYIFTIDnn0haed8A_IlPQZwcoXMI';
 
-    // Create Supabase client once
     const supabaseClient = supabase.createClient(SUPABASEURL, SUPABASEANON_KEY);
 
     // DOM elements
     const loginSection = document.getElementById('loginSection');
+    const confirmationScreen = document.getElementById('confirmationScreen');
+    const confirmationEmail = document.getElementById('confirmationEmail');
     const appSection = document.getElementById('appSection');
     const userEmailSpan = document.getElementById('userEmail');
     const googleLoginBtn = document.getElementById('googleLoginBtn');
@@ -223,9 +270,12 @@
     const progressArea = document.getElementById('progressArea');
     const resultsDiv = document.getElementById('results');
     const dataGrid = document.getElementById('dataGrid');
+    const resendBtn = document.getElementById('resendBtn');
 
     let isSignUpMode = false;
+    let lastSignUpEmail = '';
 
+    // ---- Show/hide email form ----
     showEmailBtn.addEventListener('click', () => {
         emailForm.style.display = emailForm.style.display === 'block' ? 'none' : 'block';
     });
@@ -236,41 +286,97 @@
         emailLoginBtn.innerText = isSignUpMode ? 'Sign Up' : 'Sign In';
     });
 
+    // ---- Email auth handler ----
     async function handleEmailAuth() {
         const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value.trim();
         if (!email || !password) { alert('Please enter both email and password'); return; }
+
         let response;
         if (isSignUpMode) {
+            // Sign up
             response = await supabaseClient.auth.signUp({ email, password });
-            if (response.error) alert('Sign up error: ' + response.error.message);
-            else alert('Check your email for confirmation!');
+            if (response.error) {
+                alert('Sign up error: ' + response.error.message);
+                return;
+            }
+            // Show confirmation screen
+            lastSignUpEmail = email;
+            confirmationEmail.textContent = email;
+            loginSection.classList.add('hidden');
+            confirmationScreen.style.display = 'block';
+            emailForm.style.display = 'none';
         } else {
+            // Sign in
             response = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (response.error) alert('Login error: ' + response.error.message);
+            if (response.error) {
+                if (response.error.message.includes('Email not confirmed')) {
+                    alert('Please confirm your email first. Check your inbox for the confirmation link.');
+                } else {
+                    alert('Login error: ' + response.error.message);
+                }
+                return;
+            }
+            // If sign-in successful, auth state listener will handle the rest
+            emailForm.style.display = 'none';
         }
-        if (!response.error) emailForm.style.display = 'none';
     }
     emailLoginBtn.addEventListener('click', handleEmailAuth);
 
-    async function signInWithGoogle() {
-    // Clear any stale OAuth state to prevent redirect to localhost
-    await supabaseClient.auth.signOut();
-    localStorage.removeItem('supabase.auth.token');
-    sessionStorage.clear();
-    
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: 'https://lienflow-frontend.onrender.com' }
+    // ---- Resend confirmation ----
+    resendBtn.addEventListener('click', async () => {
+        if (!lastSignUpEmail) return;
+        const { error } = await supabaseClient.auth.resend({
+            type: 'signup',
+            email: lastSignUpEmail,
+        });
+        if (error) {
+            alert('Error resending: ' + error.message);
+        } else {
+            alert('Confirmation email resent! Check your inbox.');
+        }
     });
-    if (error) console.error('Google login error:', error);
-}
-    googleLoginBtn.addEventListener('click', signInWithGoogle);
 
+    // ---- Google login (commented out for now) ----
+    // ... (you can uncomment later)
+
+    // ---- Logout ----
     async function logout() { await supabaseClient.auth.signOut(); }
     logoutBtn.addEventListener('click', logout);
 
-    // Subscribe button
+    // ---- Auth state listener ----
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+            localStorage.setItem('supabase_token', session.access_token);
+            userEmailSpan.innerText = session.user.email;
+            // Hide login and confirmation, show app
+            loginSection.classList.add('hidden');
+            confirmationScreen.style.display = 'none';
+            appSection.classList.remove('hidden');
+        } else if (event === 'SIGNED_OUT') {
+            localStorage.removeItem('supabase_token');
+            loginSection.classList.remove('hidden');
+            confirmationScreen.style.display = 'none';
+            appSection.classList.add('hidden');
+            resultsDiv.style.display = 'none';
+            progressArea.style.display = 'none';
+        }
+    });
+
+    // ---- Check existing session ----
+    async function checkSession() {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session) {
+            localStorage.setItem('supabase_token', session.access_token);
+            userEmailSpan.innerText = session.user.email;
+            loginSection.classList.add('hidden');
+            confirmationScreen.style.display = 'none';
+            appSection.classList.remove('hidden');
+        }
+    }
+    checkSession();
+
+    // ---- Subscribe button ----
     document.getElementById('subscribeBtn')?.addEventListener('click', async () => {
         const token = localStorage.getItem('supabase_token');
         if (!token) {
@@ -293,33 +399,7 @@
         }
     });
 
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-            localStorage.setItem('supabase_token', session.access_token);
-            userEmailSpan.innerText = session.user.email;
-            loginSection.classList.add('hidden');
-            appSection.classList.remove('hidden');
-        } else if (event === 'SIGNED_OUT') {
-            localStorage.removeItem('supabase_token');
-            loginSection.classList.remove('hidden');
-            appSection.classList.add('hidden');
-            resultsDiv.style.display = 'none';
-            progressArea.style.display = 'none';
-        }
-    });
-
-    async function checkSession() {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (session) {
-            localStorage.setItem('supabase_token', session.access_token);
-            userEmailSpan.innerText = session.user.email;
-            loginSection.classList.add('hidden');
-            appSection.classList.remove('hidden');
-        }
-    }
-    checkSession();
-
-    // Upload logic
+    // ---- Upload logic ----
     uploadArea.addEventListener('click', () => fileInput.click());
     uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.style.borderColor = '#60a5fa'; });
     uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor = '#3b82f6'; });
