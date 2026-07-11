@@ -219,10 +219,11 @@
         <!-- APP SECTION (shown after login) -->
         <div id="appSection" class="hidden">
             <div class="user-info">
-                <span class="user-email" id="userEmail"></span>
-                <button id="subscribeBtn" style="background: #3b82f6; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Start 7-Day Free Trial</button>
-                <button class="btn-logout" id="logoutBtn">Sign Out</button>
-            </div>
+    <span class="user-email" id="userEmail"></span>
+    <button id="subscribeBtn" style="background: #3b82f6; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Start 7-Day Free Trial</button>
+    <button id="manageBtn" style="background: #475569; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Manage Subscription</button>
+    <button class="btn-logout" id="logoutBtn">Sign Out</button>
+</div>
             <div style="color: #94a3b8; font-size: 0.85rem; text-align: center; margin-bottom: 1rem;">
                 💡 7-day free trial · Then $49/month · Cancel anytime
             </div>
@@ -398,7 +399,28 @@
             alert('Network error: ' + err.message);
         }
     });
-
+// Manage Subscription button
+document.getElementById('manageBtn')?.addEventListener('click', async () => {
+    const token = localStorage.getItem('supabase_token');
+    if (!token) {
+        alert('Please log in first');
+        return;
+    }
+    try {
+        const response = await fetch('https://lien-waiver-api-clean.onrender.com/create-portal-session', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            alert('Error: ' + (data.detail || 'Could not load subscription manager'));
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+    }
+});
     // ---- Upload logic ----
     uploadArea.addEventListener('click', () => fileInput.click());
     uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.style.borderColor = '#60a5fa'; });
