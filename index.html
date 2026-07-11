@@ -54,14 +54,14 @@
             font-weight: 600;
             cursor: pointer;
         }
-        .email-form {
+        .email-form, .reset-form, .new-password-form {
             margin-top: 1.5rem;
             padding: 1rem;
             background: rgba(15,23,42,0.5);
             border-radius: 1rem;
             display: none;
         }
-        .email-form input {
+        .email-form input, .reset-form input, .new-password-form input {
             width: 100%;
             padding: 0.75rem;
             margin-bottom: 0.75rem;
@@ -70,7 +70,7 @@
             border-radius: 0.5rem;
             color: white;
         }
-        .email-form button {
+        .email-form button, .reset-form button, .new-password-form button {
             width: 100%;
             padding: 0.75rem;
             background: #3b82f6;
@@ -149,27 +149,7 @@
         }
         .hidden { display: none; }
         .footer { text-align: center; color: #64748b; margin-top: 2rem; font-size: 0.8rem; }
-
-        /* Confirmation Screen */
-        #confirmationScreen {
-            text-align: center;
-            padding: 2rem;
-            display: none;
-        }
-        #confirmationScreen h2 {
-            color: #e2e8f0;
-            margin-bottom: 1rem;
-        }
-        #confirmationScreen p {
-            color: #94a3b8;
-            max-width: 500px;
-            margin: 0 auto 2rem;
-            line-height: 1.6;
-        }
-        .confirmation-icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-        }
+        .confirmation-icon { font-size: 4rem; margin-bottom: 1rem; }
         .btn-resend {
             background: transparent;
             border: 1px solid #3b82f6;
@@ -180,6 +160,9 @@
             font-weight: 600;
         }
         .btn-resend:hover { background: #3b82f6; color: white; }
+        .text-link { color: #60a5fa; cursor: pointer; text-decoration: underline; }
+        .text-link:hover { color: #93c5fd; }
+        .message { color: #94a3b8; margin: 0.5rem 0; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -193,37 +176,55 @@
         <!-- LOGIN SECTION -->
         <div id="loginSection">
             <div class="auth-section">
-                <!-- Google button commented out for now -->
+                <!-- Google button commented out -->
                 <!-- <button class="btn-google" id="googleLoginBtn">Continue with Google</button> -->
                 <button class="btn-email" id="showEmailBtn">Sign in with Email</button>
                 <div id="emailForm" class="email-form">
                     <input type="email" id="loginEmail" placeholder="Email address">
                     <input type="password" id="loginPassword" placeholder="Password">
                     <button id="emailLoginBtn">Sign In</button>
-                    <p style="margin-top:0.5rem;"><a href="#" id="showSignupLink" style="color:#60a5fa;">No account? Sign up</a></p>
+                    <p style="margin-top:0.5rem; display:flex; justify-content:space-between;">
+                        <a href="#" id="showSignupLink" style="color:#60a5fa;">No account? Sign up</a>
+                        <a href="#" id="showResetLink" style="color:#60a5fa;">Forgot password?</a>
+                    </p>
+                </div>
+
+                <!-- Reset password form -->
+                <div id="resetForm" class="reset-form">
+                    <h4 style="color:#e2e8f0; margin-bottom:0.5rem;">Reset your password</h4>
+                    <p style="color:#94a3b8; font-size:0.9rem; margin-bottom:0.75rem;">We'll send you a link to set a new password.</p>
+                    <input type="email" id="resetEmail" placeholder="Email address">
+                    <button id="resetBtn">Send Reset Link</button>
+                    <p style="margin-top:0.5rem;"><a href="#" id="resetBackLink" style="color:#60a5fa;">← Back to sign in</a></p>
+                    <div id="resetMessage" class="message"></div>
+                </div>
+
+                <!-- New password form (shown after recovery) -->
+                <div id="newPasswordForm" class="new-password-form">
+                    <h4 style="color:#e2e8f0; margin-bottom:0.5rem;">Set new password</h4>
+                    <input type="password" id="newPassword" placeholder="New password">
+                    <button id="updatePasswordBtn">Update password</button>
+                    <div id="passwordMessage" class="message"></div>
                 </div>
             </div>
         </div>
 
-        <!-- CONFIRMATION SCREEN (shown after sign-up) -->
-        <div id="confirmationScreen">
+        <!-- CONFIRMATION SCREEN -->
+        <div id="confirmationScreen" style="display:none; text-align:center; padding:2rem;">
             <div class="confirmation-icon">✉️</div>
-            <h2>Check your email</h2>
-            <p>
-                We've sent a confirmation link to <span id="confirmationEmail" style="color:#60a5fa;"></span>.
-                Please click the link in the email to activate your account. Once confirmed, you can log in.
-            </p>
+            <h2 style="color:#e2e8f0;">Check your email</h2>
+            <p style="color:#94a3b8;">We've sent a confirmation link to <span id="confirmationEmail" style="color:#60a5fa;"></span>. Please click the link to activate your account.</p>
             <button class="btn-resend" id="resendBtn">Resend confirmation email</button>
         </div>
 
-        <!-- APP SECTION (shown after login) -->
+        <!-- APP SECTION -->
         <div id="appSection" class="hidden">
             <div class="user-info">
-    <span class="user-email" id="userEmail"></span>
-    <button id="subscribeBtn" style="background: #3b82f6; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Start 7-Day Free Trial</button>
-    <button id="manageBtn" style="background: #475569; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Manage Subscription</button>
-    <button class="btn-logout" id="logoutBtn">Sign Out</button>
-</div>
+                <span class="user-email" id="userEmail"></span>
+                <button id="subscribeBtn" style="background: #3b82f6; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Start 7-Day Free Trial</button>
+                <button id="manageBtn" style="background: #475569; color: white; border: none; padding: 0.25rem 1rem; border-radius: 1rem; margin-right: 0.5rem; cursor: pointer;">Manage Subscription</button>
+                <button class="btn-logout" id="logoutBtn">Sign Out</button>
+            </div>
             <div style="color: #94a3b8; font-size: 0.85rem; text-align: center; margin-bottom: 1rem;">
                 💡 7-day free trial · Then $49/month · Cancel anytime
             </div>
@@ -255,13 +256,12 @@
 
     // DOM elements
     const loginSection = document.getElementById('loginSection');
-    const confirmationScreen = document.getElementById('confirmationScreen');
-    const confirmationEmail = document.getElementById('confirmationEmail');
     const appSection = document.getElementById('appSection');
     const userEmailSpan = document.getElementById('userEmail');
-    const googleLoginBtn = document.getElementById('googleLoginBtn');
     const showEmailBtn = document.getElementById('showEmailBtn');
     const emailForm = document.getElementById('emailForm');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
     const emailLoginBtn = document.getElementById('emailLoginBtn');
     const showSignupLink = document.getElementById('showSignupLink');
     const logoutBtn = document.getElementById('logoutBtn');
@@ -271,15 +271,71 @@
     const progressArea = document.getElementById('progressArea');
     const resultsDiv = document.getElementById('results');
     const dataGrid = document.getElementById('dataGrid');
+    const subscribeBtn = document.getElementById('subscribeBtn');
+    const manageBtn = document.getElementById('manageBtn');
+
+    // Reset password elements
+    const resetForm = document.getElementById('resetForm');
+    const resetEmail = document.getElementById('resetEmail');
+    const resetBtn = document.getElementById('resetBtn');
+    const resetMessage = document.getElementById('resetMessage');
+    const resetBackLink = document.getElementById('resetBackLink');
+    const showResetLink = document.getElementById('showResetLink');
+
+    // New password elements
+    const newPasswordForm = document.getElementById('newPasswordForm');
+    const newPassword = document.getElementById('newPassword');
+    const updatePasswordBtn = document.getElementById('updatePasswordBtn');
+    const passwordMessage = document.getElementById('passwordMessage');
+
+    // Confirmation
+    const confirmationScreen = document.getElementById('confirmationScreen');
+    const confirmationEmail = document.getElementById('confirmationEmail');
     const resendBtn = document.getElementById('resendBtn');
 
     let isSignUpMode = false;
     let lastSignUpEmail = '';
 
-    // ---- Show/hide email form ----
+    // ---- Toggle between forms ----
+    function showEmailLoginForm() {
+        emailForm.style.display = 'block';
+        resetForm.style.display = 'none';
+        newPasswordForm.style.display = 'none';
+        resetMessage.textContent = '';
+    }
+
+    function showResetForm() {
+        emailForm.style.display = 'none';
+        resetForm.style.display = 'block';
+        newPasswordForm.style.display = 'none';
+        resetMessage.textContent = '';
+    }
+
+    function showNewPasswordForm() {
+        emailForm.style.display = 'none';
+        resetForm.style.display = 'none';
+        newPasswordForm.style.display = 'block';
+        passwordMessage.textContent = '';
+    }
+
     showEmailBtn.addEventListener('click', () => {
-        emailForm.style.display = emailForm.style.display === 'block' ? 'none' : 'block';
+        if (emailForm.style.display === 'block') {
+            emailForm.style.display = 'none';
+        } else {
+            showEmailLoginForm();
+        }
     });
+
+    showResetLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        showResetForm();
+    });
+
+    resetBackLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        showEmailLoginForm();
+    });
+
     showSignupLink.addEventListener('click', (e) => {
         e.preventDefault();
         isSignUpMode = !isSignUpMode;
@@ -287,42 +343,83 @@
         emailLoginBtn.innerText = isSignUpMode ? 'Sign Up' : 'Sign In';
     });
 
-    // ---- Email auth handler ----
+    // ---- Email auth (sign in / sign up) ----
     async function handleEmailAuth() {
-        const email = document.getElementById('loginEmail').value.trim();
-        const password = document.getElementById('loginPassword').value.trim();
+        const email = loginEmail.value.trim();
+        const password = loginPassword.value.trim();
         if (!email || !password) { alert('Please enter both email and password'); return; }
 
         let response;
         if (isSignUpMode) {
-            // Sign up
             response = await supabaseClient.auth.signUp({ email, password });
             if (response.error) {
                 alert('Sign up error: ' + response.error.message);
                 return;
             }
-            // Show confirmation screen
             lastSignUpEmail = email;
             confirmationEmail.textContent = email;
             loginSection.classList.add('hidden');
             confirmationScreen.style.display = 'block';
             emailForm.style.display = 'none';
         } else {
-            // Sign in
             response = await supabaseClient.auth.signInWithPassword({ email, password });
             if (response.error) {
                 if (response.error.message.includes('Email not confirmed')) {
-                    alert('Please confirm your email first. Check your inbox for the confirmation link.');
+                    alert('Please confirm your email first.');
                 } else {
                     alert('Login error: ' + response.error.message);
                 }
                 return;
             }
-            // If sign-in successful, auth state listener will handle the rest
             emailForm.style.display = 'none';
         }
     }
     emailLoginBtn.addEventListener('click', handleEmailAuth);
+
+    // ---- Reset password ----
+    resetBtn.addEventListener('click', async () => {
+        const email = resetEmail.value.trim();
+        if (!email) { resetMessage.textContent = 'Please enter your email.'; return; }
+        resetMessage.textContent = 'Sending reset link...';
+        try {
+            const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                redirectTo: 'https://lienflow-frontend.onrender.com'
+            });
+            if (error) {
+                resetMessage.textContent = 'Error: ' + error.message;
+            } else {
+                resetMessage.textContent = '✅ Reset link sent! Check your email.';
+                resetEmail.value = '';
+            }
+        } catch (err) {
+            resetMessage.textContent = 'Network error: ' + err.message;
+        }
+    });
+
+    // ---- Update password after recovery ----
+    updatePasswordBtn.addEventListener('click', async () => {
+        const pass = newPassword.value.trim();
+        if (pass.length < 6) { passwordMessage.textContent = 'Password must be at least 6 characters.'; return; }
+        passwordMessage.textContent = 'Updating...';
+        try {
+            const { error } = await supabaseClient.auth.updateUser({ password: pass });
+            if (error) {
+                passwordMessage.textContent = 'Error: ' + error.message;
+            } else {
+                passwordMessage.textContent = '✅ Password updated! You can now sign in.';
+                newPassword.value = '';
+                // Redirect to login after a moment
+                setTimeout(() => {
+                    newPasswordForm.style.display = 'none';
+                    showEmailLoginForm();
+                    loginSection.classList.remove('hidden');
+                    appSection.classList.add('hidden');
+                }, 2000);
+            }
+        } catch (err) {
+            passwordMessage.textContent = 'Error: ' + err.message;
+        }
+    });
 
     // ---- Resend confirmation ----
     resendBtn.addEventListener('click', async () => {
@@ -331,36 +428,36 @@
             type: 'signup',
             email: lastSignUpEmail,
         });
-        if (error) {
-            alert('Error resending: ' + error.message);
-        } else {
-            alert('Confirmation email resent! Check your inbox.');
-        }
+        if (error) alert('Error resending: ' + error.message);
+        else alert('Confirmation email resent!');
     });
-
-    // ---- Google login (commented out for now) ----
-    // ... (you can uncomment later)
 
     // ---- Logout ----
     async function logout() { await supabaseClient.auth.signOut(); }
     logoutBtn.addEventListener('click', logout);
 
     // ---- Auth state listener ----
-    supabaseClient.auth.onAuthStateChange((event, session) => {
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session) {
             localStorage.setItem('supabase_token', session.access_token);
             userEmailSpan.innerText = session.user.email;
-            // Hide login and confirmation, show app
             loginSection.classList.add('hidden');
             confirmationScreen.style.display = 'none';
             appSection.classList.remove('hidden');
+            updateSubscriptionUI(session.access_token);
         } else if (event === 'SIGNED_OUT') {
             localStorage.removeItem('supabase_token');
             loginSection.classList.remove('hidden');
-            confirmationScreen.style.display = 'none';
             appSection.classList.add('hidden');
             resultsDiv.style.display = 'none';
             progressArea.style.display = 'none';
+            showEmailLoginForm();
+        } else if (event === 'PASSWORD_RECOVERY') {
+            // User clicked password reset link – show new password form
+            showNewPasswordForm();
+            loginSection.classList.remove('hidden'); // ensure we see the form
+            // Hide app if visible
+            appSection.classList.add('hidden');
         }
     });
 
@@ -371,56 +468,63 @@
             localStorage.setItem('supabase_token', session.access_token);
             userEmailSpan.innerText = session.user.email;
             loginSection.classList.add('hidden');
-            confirmationScreen.style.display = 'none';
             appSection.classList.remove('hidden');
+            updateSubscriptionUI(session.access_token);
         }
     }
     checkSession();
 
-    // ---- Subscribe button ----
-    document.getElementById('subscribeBtn')?.addEventListener('click', async () => {
-        const token = localStorage.getItem('supabase_token');
-        if (!token) {
-            alert('Please log in first');
-            return;
+    // ---- Subscription status for trial button ----
+    async function updateSubscriptionUI(token) {
+        try {
+            const response = await fetch('https://lien-waiver-api-clean.onrender.com/subscription-status', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.status === 'active' || data.status === 'trialing') {
+                subscribeBtn.style.display = 'none';
+            } else {
+                subscribeBtn.style.display = 'inline-block';
+            }
+        } catch (err) {
+            console.error('Could not fetch subscription status:', err);
         }
+    }
+
+    // ---- Subscribe ----
+    subscribeBtn.addEventListener('click', async () => {
+        const token = localStorage.getItem('supabase_token');
+        if (!token) { alert('Please log in first'); return; }
         try {
             const response = await fetch('https://lien-waiver-api-clean.onrender.com/create-checkout-session', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-            if (data.url) {
-                window.location.href = data.url;
-            } else {
-                alert('Error creating checkout session: ' + (data.detail || 'Unknown error'));
-            }
+            if (data.url) window.location.href = data.url;
+            else alert('Error: ' + (data.detail || 'Unknown error'));
         } catch (err) {
             alert('Network error: ' + err.message);
         }
     });
-// Manage Subscription button
-document.getElementById('manageBtn')?.addEventListener('click', async () => {
-    const token = localStorage.getItem('supabase_token');
-    if (!token) {
-        alert('Please log in first');
-        return;
-    }
-    try {
-        const response = await fetch('https://lien-waiver-api-clean.onrender.com/create-portal-session', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        if (data.url) {
-            window.location.href = data.url;
-        } else {
-            alert('Error: ' + (data.detail || 'Could not load subscription manager'));
+
+    // ---- Manage Subscription ----
+    manageBtn.addEventListener('click', async () => {
+        const token = localStorage.getItem('supabase_token');
+        if (!token) { alert('Please log in first'); return; }
+        try {
+            const response = await fetch('https://lien-waiver-api-clean.onrender.com/create-portal-session', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.url) window.location.href = data.url;
+            else alert('Error: ' + (data.detail || 'Could not load subscription manager'));
+        } catch (err) {
+            alert('Network error: ' + err.message);
         }
-    } catch (err) {
-        alert('Network error: ' + err.message);
-    }
-});
+    });
+
     // ---- Upload logic ----
     uploadArea.addEventListener('click', () => fileInput.click());
     uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.style.borderColor = '#60a5fa'; });
