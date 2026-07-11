@@ -179,70 +179,82 @@ async def stripe_webhook(request: Request):
     event_type = event["type"]
     event_data = event["data"]["object"]
 
-    if event_type == "checkout.session.completed":
-        session = event_data
-        customer_email = session["customer_details"]["email"]
-        stripe_customer_id = session["customer"]
-        stripe_subscription_id = session["subscription"]
-        supabase_user_id = session.get("metadata", {}).get("supabase_user_id")
+    try:
+        if event_type == "checkout.session.completed":
+            session = event_data
+            # Use attribute access instead of .get()
+            customer_email = session.customer_details.email
+            stripe_customer_id = session.customer
+            stripe_subscription_id = session.subscription
+            supabase_user_id = session.metadata.get("supabase_user_id") if session.metadata else None
 
-        if not supabase_user_id:
-            supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
-            user_result = supabase_admin.auth.admin.list_users()
-            for user in user_result.users:
-                if user.email == customer_email:
-                    supabase_user_id = user.id
-                    break
+            if not supabase_user_id:
+                supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+                user_result = supabase_admin.auth.admin.list_users()
+                for user in user_result.users:
+                    if user.email == customer_email:
+                        supabase_user_id = user.id
+                        break
 
-        if not supabase_user_id:
-            print("Webhook error: no user_id found")
-            return {"status": "error", "detail": "User not found"}
+            if not supabase_user_id:
+                print("Webhook error: no user_id found")
+                return {"status": "error", "detail": "User not found"}
 
-        try:
-            subscription = stripe.Subscription.retrieve(stripe_subscription_id)
-            status = subscription.status
-            current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
-        except Exception as e:
-            print(f"Error retrieving subscription: {e}")
-            status = "trialing"
-            current_period_end = (datetime.now() + timedelta(days=30)).isoformat()
+            # Retrieve the subscription to get its status
+            try:
+                subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+                status = subscription.status
+                current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
+            except Exception as e:
+                print(f"Error retrieving subscription: {e}")
+                status = "trialing"
+                current_period_end = (datetime.now() + timedelta(days=30)).isoformat()
 
-        supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
-        data = {
-            "user_id": supabase_user_id,
-            "stripe_customer_id": stripe_customer_id,
-            "stripe_subscription_id": stripe_subscription_id,
-            "status": status,
-            "current_period_end": current_period_end,
-            "updated_at": datetime.now().isoformat(),
-        }
-        existing = supabase_auth.table("subscriptions").select("*").eq("user_id", supabase_user_id).execute()
-        if existing.data:
-            supabase_auth.table("subscriptions").update(data).eq("user_id", supabase_user_id).execute()
-        else:
-            supabase_auth.table("subscriptions").insert(data).execute()
-
-    elif event_type == "customer.subscription.updated":
-        subscription = event_data
-        stripe_subscription_id = subscription.id
-        status = subscription.status
-        current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
-
-        supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
-        result = supabase_admin.table("subscriptions").select("*").eq("stripe_subscription_id", stripe_subscription_id).execute()
-        if result.data:
-            user_id = result.data[0]["user_id"]
+            # Update subscriptions table
             supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
-            supabase_auth.table("subscriptions").update({
+            # Use service role key for insert/update to bypass RLS
+            supabase_service = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+            data = {
+                "user_id": supabase_user_id,
+                "stripe_customer_id": stripe_customer_id,
+                "stripe_subscription_id": stripe_subscription_id,
                 "status": status,
                 "current_period_end": current_period_end,
-                "updated_at": datetime.now().isoformat()
-            }).eq("user_id", user_id).execute()
-        else:
-            print(f"Webhook warning: subscription {stripe_subscription_id} not found in database")
+                "updated_at": datetime.now().isoformat(),
+            }
+            existing = supabase_service.table("subscriptions").select("*").eq("user_id", supabase_user_id).execute()
+            if existing.data:
+                supabase_service.table("subscriptions").update(data).eq("user_id", supabase_user_id).execute()
+            else:
+                supabase_service.table("subscriptions").insert(data).execute()
+            print(f"Webhook updated subscription for user {supabase_user_id} with status {status}")
 
-    return {"status": "ok"}
+        elif event_type == "customer.subscription.updated":
+            subscription = event_data
+            stripe_subscription_id = subscription.id
+            status = subscription.status
+            current_period_end = datetime.fromtimestamp(subscription.current_period_end).isoformat()
 
+            supabase_service = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
+            result = supabase_service.table("subscriptions").select("*").eq("stripe_subscription_id", stripe_subscription_id).execute()
+            if result.data:
+                user_id = result.data[0]["user_id"]
+                supabase_service.table("subscriptions").update({
+                    "status": status,
+                    "current_period_end": current_period_end,
+                    "updated_at": datetime.now().isoformat()
+                }).eq("user_id", user_id).execute()
+                print(f"Webhook updated subscription status to {status} for user {user_id}")
+            else:
+                print(f"Webhook warning: subscription {stripe_subscription_id} not found in database")
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/create-checkout-session")
 async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
     access_token, user_id = auth_data
