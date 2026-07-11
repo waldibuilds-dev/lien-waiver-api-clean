@@ -282,6 +282,25 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
         return {"url": checkout_session.url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+@app.post("/create-portal-session")
+async def create_portal_session(auth_data: tuple = Depends(get_current_user)):
+    access_token, user_id = auth_data
+
+    # Get the user's Stripe customer ID from your subscriptions table
+    supabase_auth = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase_auth.auth.set_session(access_token, access_token)
+    result = supabase_auth.table("subscriptions").select("stripe_customer_id").eq("user_id", user_id).execute()
+    if not result.data or not result.data[0].get("stripe_customer_id"):
+        raise HTTPException(status_code=404, detail="No subscription found")
+
+    stripe_customer_id = result.data[0]["stripe_customer_id"]
+
+    # Create a Customer Portal session
+    portal_session = stripe.billing_portal.Session.create(
+        customer=stripe_customer_id,
+        return_url="https://lienflow-frontend.onrender.com/subscription",
+    )
+    return {"url": portal_session.url}
 
 @app.get("/health")
 def health():
