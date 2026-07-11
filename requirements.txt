@@ -6,4 +6,4 @@ PyPDF2
 python-multipart
 pypdf
 requests
-stripe
+stripe>=7.0.0
