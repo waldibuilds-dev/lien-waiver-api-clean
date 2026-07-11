@@ -265,26 +265,21 @@ async def create_checkout_session(auth_data: tuple = Depends(get_current_user)):
 
     try:
         checkout_session = stripe.checkout.Session.create(
-    payment_method_types=["card"],
-    line_items=[{
-        "price": "price_1Timcx2H40FY3BJebX8FDbXV",  # Keep your Price ID
-        "quantity": 1,
-    }],
-    mode="subscription",
-    subscription_data={
-        "trial_period_days": 7
-    },
-    payment_method_collection='if_required',  # <-- THIS IS NEW
-    trial_settings={  # <-- THIS IS NEW
-        'end_behavior': {
-            'missing_payment_method': 'cancel'
-        }
-    },
-    success_url="https://lienflow-frontend.onrender.com?success=true",
-    cancel_url="https://lienflow-frontend.onrender.com?canceled=true",
-    customer_email=email,
-    metadata={"supabase_user_id": user_id},
-)
+            payment_method_types=["card"],
+            line_items=[{
+                "price": "price_1Timcx2H40FY3BJebX8FDbXV",  # <-- Verify this Price ID is correct
+                "quantity": 1,
+            }],
+            mode="subscription",
+            subscription_data={
+                "trial_period_days": 7
+            },
+            payment_method_collection='if_required',  # No credit card required during trial
+            success_url="https://lienflow-frontend.onrender.com?success=true",
+            cancel_url="https://lienflow-frontend.onrender.com?canceled=true",
+            customer_email=email,
+            metadata={"supabase_user_id": user_id},
+        )
         return {"url": checkout_session.url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
